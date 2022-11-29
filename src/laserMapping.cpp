@@ -36,7 +36,10 @@
 #define MAXN (720000)
 #define PUBFRAME_PERIOD (20)
 
-// Time Log Variables
+ros::Publisher pub_corn;
+ros::Publisher pub_surf;
+
+/*** Time Log Variables ***/
 double kdtree_incremental_time = 0.0, kdtree_search_time = 0.0, kdtree_delete_time = 0.0;
 double T1[MAXN], s_plot[MAXN], s_plot2[MAXN], s_plot3[MAXN], s_plot4[MAXN], s_plot5[MAXN], s_plot6[MAXN], s_plot7[MAXN], s_plot8[MAXN], s_plot9[MAXN], s_plot10[MAXN], s_plot11[MAXN];
 double match_time = 0, solve_time = 0, solve_const_H_time = 0;
@@ -302,7 +305,20 @@ void livox_pcl_cbk(const livox_ros_driver::CustomMsg::ConstPtr &msg)
     }
 
     PointCloudXYZI::Ptr ptr(new PointCloudXYZI());
-    p_pre->process(msg, ptr);
+    PointCloudXYZI::Ptr pubCorn(new PointCloudXYZI());
+    PointCloudXYZI::Ptr pubSurf(new PointCloudXYZI());
+    p_pre->process(msg, ptr, pubCorn, pubSurf);
+    sensor_msgs::PointCloud2 cornCloud;
+    pcl::toROSMsg(*pubCorn, cornCloud);
+    cornCloud.header.stamp = ros::Time::now();
+    cornCloud.header.frame_id = "camera_init";
+    pub_corn.publish(cornCloud);
+    sensor_msgs::PointCloud2 surfCloud;
+    pcl::toROSMsg(*pubSurf, surfCloud);
+    surfCloud.header.stamp = ros::Time::now();
+    surfCloud.header.frame_id = "camera_init";
+    pub_surf.publish(surfCloud);
+    
     lidar_buffer.push_back(ptr);
     time_buffer.push_back(last_timestamp_lidar);
 
@@ -830,7 +846,9 @@ int main(int argc, char **argv)
     ros::Publisher pubLaserCloudMap = nh.advertise<sensor_msgs::PointCloud2>("/Laser_map", 100000);
     ros::Publisher pubOdomAftMapped = nh.advertise<nav_msgs::Odometry>("/Odometry", 100000);
     ros::Publisher pubPath = nh.advertise<nav_msgs::Path>("/path", 100000);
-
+    pub_corn = nh.advertise<sensor_msgs::PointCloud2>("/pl_corn", 100000);;
+    pub_surf = nh.advertise<sensor_msgs::PointCloud2>("/pl_surf", 100000);;
+    //------------------------------------------------------------------------------------------------------
     signal(SIGINT, SigHandle);
     ros::Rate rate(5000);
     bool status = ros::ok();

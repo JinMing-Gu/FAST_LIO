@@ -41,10 +41,13 @@ void Preprocess::set(bool feat_en, int lid_type, double bld, int pfilt_num)
     point_filter_num = pfilt_num;
 }
 
-void Preprocess::process(const livox_ros_driver::CustomMsg::ConstPtr &msg, PointCloudXYZI::Ptr &pcl_out)
+void Preprocess::process(const livox_ros_driver::CustomMsg::ConstPtr &msg, PointCloudXYZI::Ptr &pcl_out, PointCloudXYZI::Ptr &pub_corn, PointCloudXYZI::Ptr &pub_surf)
 {
     avia_handler(msg);
     *pcl_out = pl_surf;
+
+    *pub_corn = pl_corn;
+    *pub_surf = pl_surf;
 }
 
 void Preprocess::process(const sensor_msgs::PointCloud2::ConstPtr &msg, PointCloudXYZI::Ptr &pcl_out)
@@ -765,6 +768,8 @@ void Preprocess::give_feature(pcl::PointCloud<PointType> &pl, vector<orgtype> &t
             last_surface = -1;
         }
     }
+    cout << "pl_corn: " << pl_corn.size() << endl;
+    cout << "pl_surf: " << pl_surf.size() << endl;
 }
 
 void Preprocess::pub_func(PointCloudXYZI &pl, const ros::Time &ct)
