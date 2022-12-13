@@ -44,13 +44,13 @@ void Preprocess::set(bool feat_en, int lid_type, double bld, int pfilt_num)
 void Preprocess::process(const livox_ros_driver::CustomMsg::ConstPtr &msg, PointCloudXYZI::Ptr &pcl_out, PointCloudXYZI::Ptr &pub_corn, PointCloudXYZI::Ptr &pub_surf)
 {
     avia_handler(msg);
-    *pcl_out = pl_surf;
 
+    *pcl_out = pl_surf;
     *pub_corn = pl_corn;
     *pub_surf = pl_surf;
 }
 
-void Preprocess::process(const sensor_msgs::PointCloud2::ConstPtr &msg, PointCloudXYZI::Ptr &pcl_out)
+void Preprocess::process(const sensor_msgs::PointCloud2::ConstPtr &msg, PointCloudXYZI::Ptr &pcl_out, PointCloudXYZI::Ptr &pub_corn, PointCloudXYZI::Ptr &pub_surf)
 {
     switch (time_unit)
     {
@@ -81,11 +81,18 @@ void Preprocess::process(const sensor_msgs::PointCloud2::ConstPtr &msg, PointClo
         velodyne_handler(msg);
         break;
 
+    case ROTATING_LIDAR:
+        rotating_lidar_handler(msg);
+        break;
+
     default:
         printf("Error LiDAR Type");
         break;
     }
+
     *pcl_out = pl_surf;
+    *pub_corn = pl_corn;
+    *pub_surf = pl_surf;
 }
 
 void Preprocess::avia_handler(const livox_ros_driver::CustomMsg::ConstPtr &msg)
@@ -451,6 +458,49 @@ void Preprocess::velodyne_handler(const sensor_msgs::PointCloud2::ConstPtr &msg)
                 {
                     pl_surf.points.push_back(added_pt);
                 }
+            }
+        }
+    }
+}
+
+void Preprocess::rotating_lidar_handler(const sensor_msgs::PointCloud2::ConstPtr &msg)
+{
+    pl_surf.clear();
+    pl_corn.clear();
+    pl_full.clear();
+
+    pcl::PointCloud<pcl::PointXYZI> pl_orig;
+    pcl::fromROSMsg(*msg, pl_orig);
+    uint plsize = pl_orig.size();
+    if (plsize == 0)
+        return;
+    pl_surf.reserve(plsize);
+
+    double time_stamp = msg->header.stamp.toSec();
+    for (int i = 0; i < pl_orig.points.size(); i++)
+    {
+        double range = std::sqrt(pl_orig.points[i].x * pl_orig.points[i].x + pl_orig.points[i].y * pl_orig.points[i].y +
+                                 pl_orig.points[i].z * pl_orig.points[i].z);
+        if (range < blind)
+        {
+            continue;
+        }
+
+        PointType added_pt;
+        added_pt.x = pl_orig.points[i].x;
+        added_pt.y = pl_orig.points[i].y;
+        added_pt.z = pl_orig.points[i].z;
+        added_pt.intensity = pl_orig.points[i].intensity;
+        added_pt.normal_x = 0;
+        added_pt.normal_y = 0;
+        added_pt.normal_z = 0;
+        added_pt.curvature = (i / plsize) * 1000;
+
+        if (i % point_filter_num == 0)
+        {
+            if (added_pt.x * added_pt.x + added_pt.y * added_pt.y + added_pt.z * added_pt.z > (blind * blind))
+            {
+                pl_surf.points.push_back(added_pt);
             }
         }
     }

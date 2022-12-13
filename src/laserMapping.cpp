@@ -269,7 +269,20 @@ void standard_pcl_cbk(const sensor_msgs::PointCloud2::ConstPtr &msg)
     }
 
     PointCloudXYZI::Ptr ptr(new PointCloudXYZI());
-    p_pre->process(msg, ptr);
+    PointCloudXYZI::Ptr pubCorn(new PointCloudXYZI());
+    PointCloudXYZI::Ptr pubSurf(new PointCloudXYZI());
+    p_pre->process(msg, ptr, pubCorn, pubSurf);
+    sensor_msgs::PointCloud2 cornCloud;
+    pcl::toROSMsg(*pubCorn, cornCloud);
+    cornCloud.header.stamp = ros::Time::now();
+    cornCloud.header.frame_id = "camera_init";
+    pub_corn.publish(cornCloud);
+    sensor_msgs::PointCloud2 surfCloud;
+    pcl::toROSMsg(*pubSurf, surfCloud);
+    surfCloud.header.stamp = ros::Time::now();
+    surfCloud.header.frame_id = "camera_init";
+    pub_surf.publish(surfCloud);
+
     lidar_buffer.push_back(ptr);
     time_buffer.push_back(msg->header.stamp.toSec());
     last_timestamp_lidar = msg->header.stamp.toSec();
