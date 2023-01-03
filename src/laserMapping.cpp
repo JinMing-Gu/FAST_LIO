@@ -122,7 +122,10 @@ void SigHandle(int sig)
 inline void dump_lio_state_to_log(FILE *fp)
 {
     Eigen::Vector3d rot_ang(Log(state_point.rot.toRotationMatrix()));
-    fprintf(fp, "%lf ", Measures.lidar_beg_time - first_lidar_time);
+    fprintf(fp, "%lf ", Measures.lidar_beg_time);
+    // fprintf(fp, "%lf %lf %lf ", state_point.pos(0), state_point.pos(1), state_point.pos(2));    // Pos
+    // fprintf(fp, "%lf %lf %lf ", rot_ang(0), rot_ang(1), rot_ang(2));                            // Angle
+    // fprintf(fp, "%lf ", Measures.lidar_beg_time - first_lidar_time);
     fprintf(fp, "%lf %lf %lf ", rot_ang(0), rot_ang(1), rot_ang(2));                            // Angle
     fprintf(fp, "%lf %lf %lf ", state_point.pos(0), state_point.pos(1), state_point.pos(2));    // Pos
     fprintf(fp, "%lf %lf %lf ", 0.0, 0.0, 0.0);                                                 // omega

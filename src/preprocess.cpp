@@ -494,7 +494,10 @@ void Preprocess::rotating_lidar_handler(const sensor_msgs::PointCloud2::ConstPtr
         added_pt.normal_x = 0;
         added_pt.normal_y = 0;
         added_pt.normal_z = 0;
-        added_pt.curvature = (i / plsize) * 1000;
+        // double(i) / double(plsize - 1), 在100毫秒内占的比例
+        // added_pt.curvature, 单位: 毫秒
+        // added_pt.curvature = (double(i) / double(plsize - 1)) * 100;
+        added_pt.curvature = 0;
 
         if (i % point_filter_num == 0)
         {
