@@ -400,8 +400,6 @@ void Preprocess::velodyne_handler(const sensor_msgs::PointCloud2::ConstPtr &msg)
         for (int i = 0; i < plsize; i++)
         {
             PointType added_pt;
-            // cout<<"!!!!!!"<<i<<" "<<plsize<<endl;
-
             added_pt.normal_x = 0;
             added_pt.normal_y = 0;
             added_pt.normal_z = 0;

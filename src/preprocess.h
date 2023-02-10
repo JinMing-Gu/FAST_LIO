@@ -1,7 +1,8 @@
 #include <ros/ros.h>
 #include <pcl_conversions/pcl_conversions.h>
 #include <sensor_msgs/PointCloud2.h>
-#include <livox_ros_driver/CustomMsg.h>
+
+#include "livox_ros_driver/CustomMsg.h"
 
 using namespace std;
 
@@ -111,7 +112,7 @@ POINT_CLOUD_REGISTER_POINT_STRUCT(ouster_ros::Point,
 class Preprocess
 {
   public:
-//   EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+  // EIGEN_MAKE_ALIGNED_OPERATOR_NEW
 
   Preprocess();
   ~Preprocess();
@@ -129,7 +130,6 @@ class Preprocess
   double blind;
   bool feature_enabled, given_offset_time;
   ros::Publisher pub_full, pub_surf, pub_corn;
-    
 
   private:
   void avia_handler(const livox_ros_driver::CustomMsg::ConstPtr &msg);
@@ -140,7 +140,7 @@ class Preprocess
   int  plane_judge(const PointCloudXYZI &pl, vector<orgtype> &types, uint i, uint &i_nex, Eigen::Vector3d &curr_direct);
   bool small_plane(const PointCloudXYZI &pl, vector<orgtype> &types, uint i_cur, uint &i_nex, Eigen::Vector3d &curr_direct);
   bool edge_jump_judge(const PointCloudXYZI &pl, vector<orgtype> &types, uint i, Surround nor_dir);
-  
+
   int group_size;
   double disA, disB, inf_bound;
   double limit_maxmid, limit_midmin, limit_maxmin;

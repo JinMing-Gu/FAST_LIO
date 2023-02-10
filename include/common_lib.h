@@ -1,20 +1,22 @@
 #ifndef COMMON_LIB_H
 #define COMMON_LIB_H
 
-#include <so3_math.h>
 #include <Eigen/Eigen>
-#include <pcl/point_types.h>
-#include <pcl/point_cloud.h>
+
 #include <fast_lio/Pose6D.h>
 #include <sensor_msgs/Imu.h>
 #include <nav_msgs/Odometry.h>
 #include <tf/transform_broadcaster.h>
 #include <eigen_conversions/eigen_msg.h>
 
-using namespace std;
-using namespace Eigen;
+#include <pcl/point_types.h>
+#include <pcl/point_cloud.h>
 
-#define USE_IKFOM
+#include "so3_math.h"
+
+using namespace std;
+
+// #define MP_EN
 
 #define PI_M (3.14159265358)
 #define G_m_s2 (9.81)   // Gravaty const in GuangDong/China
@@ -37,20 +39,11 @@ typedef fast_lio::Pose6D Pose6D;
 typedef pcl::PointXYZINormal PointType;
 typedef pcl::PointCloud<PointType> PointCloudXYZI;
 typedef vector<PointType, Eigen::aligned_allocator<PointType>> PointVector;
-typedef Vector3d V3D;
-typedef Matrix3d M3D;
-typedef Vector3f V3F;
-typedef Matrix3f M3F;
 
-#define MD(a, b) Matrix<double, (a), (b)>
-#define VD(a) Matrix<double, (a), 1>
-#define MF(a, b) Matrix<float, (a), (b)>
-#define VF(a) Matrix<float, (a), 1>
-
-M3D Eye3d(M3D::Identity());
-M3F Eye3f(M3F::Identity());
-V3D Zero3d(0, 0, 0);
-V3F Zero3f(0, 0, 0);
+Eigen::Matrix3d Eye3d(Eigen::Matrix3d::Identity());
+Eigen::Matrix3f Eye3f(Eigen::Matrix3f::Identity());
+Eigen::Vector3d Zero3d(0, 0, 0);
+Eigen::Vector3f Zero3f(0, 0, 0);
 
 struct MeasureGroup // Lidar data and imu dates for the curent process
 {
@@ -69,14 +62,14 @@ struct StatesGroup
 {
     StatesGroup()
     {
-        this->rot_end = M3D::Identity();
+        this->rot_end = Eigen::Matrix3d::Identity();
         this->pos_end = Zero3d;
         this->vel_end = Zero3d;
         this->bias_g = Zero3d;
         this->bias_a = Zero3d;
         this->gravity = Zero3d;
-        this->cov = MD(DIM_STATE, DIM_STATE)::Identity() * INIT_COV;
-        this->cov.block<9, 9>(9, 9) = MD(9, 9)::Identity() * 0.00001;
+        this->cov = Eigen::Matrix<double, DIM_STATE, DIM_STATE>::Identity() * INIT_COV;
+        this->cov.block<9, 9>(9, 9) = Eigen::Matrix<double, 9, 9>::Identity() * 0.00001;
     };
 
     StatesGroup(const StatesGroup &b)
@@ -102,7 +95,7 @@ struct StatesGroup
         return *this;
     };
 
-    StatesGroup operator+(const Matrix<double, DIM_STATE, 1> &state_add)
+    StatesGroup operator+(const Eigen::Matrix<double, DIM_STATE, 1> &state_add)
     {
         StatesGroup a;
         a.rot_end = this->rot_end * Exp(state_add(0, 0), state_add(1, 0), state_add(2, 0));
@@ -115,7 +108,7 @@ struct StatesGroup
         return a;
     };
 
-    StatesGroup &operator+=(const Matrix<double, DIM_STATE, 1> &state_add)
+    StatesGroup &operator+=(const Eigen::Matrix<double, DIM_STATE, 1> &state_add)
     {
         this->rot_end = this->rot_end * Exp(state_add(0, 0), state_add(1, 0), state_add(2, 0));
         this->pos_end += state_add.block<3, 1>(3, 0);
@@ -126,10 +119,10 @@ struct StatesGroup
         return *this;
     };
 
-    Matrix<double, DIM_STATE, 1> operator-(const StatesGroup &b)
+    Eigen::Matrix<double, DIM_STATE, 1> operator-(const StatesGroup &b)
     {
-        Matrix<double, DIM_STATE, 1> a;
-        M3D rotd(b.rot_end.transpose() * this->rot_end);
+        Eigen::Matrix<double, DIM_STATE, 1> a;
+        Eigen::Matrix3d rotd(b.rot_end.transpose() * this->rot_end);
         a.block<3, 1>(0, 0) = Log(rotd);
         a.block<3, 1>(3, 0) = this->pos_end - b.pos_end;
         a.block<3, 1>(6, 0) = this->vel_end - b.vel_end;
@@ -141,18 +134,18 @@ struct StatesGroup
 
     void resetpose()
     {
-        this->rot_end = M3D::Identity();
+        this->rot_end = Eigen::Matrix3d::Identity();
         this->pos_end = Zero3d;
         this->vel_end = Zero3d;
     }
 
-    M3D rot_end;                              // the estimated attitude (rotation matrix) at the end lidar point
-    V3D pos_end;                              // the estimated position at the end lidar point (world frame)
-    V3D vel_end;                              // the estimated velocity at the end lidar point (world frame)
-    V3D bias_g;                               // gyroscope bias
-    V3D bias_a;                               // accelerator bias
-    V3D gravity;                              // the estimated gravity acceleration
-    Matrix<double, DIM_STATE, DIM_STATE> cov; // states covariance
+    Eigen::Matrix3d rot_end;                              // the estimated attitude (rotation matrix) at the end lidar point
+    Eigen::Vector3d pos_end;                              // the estimated position at the end lidar point (world frame)
+    Eigen::Vector3d vel_end;                              // the estimated velocity at the end lidar point (world frame)
+    Eigen::Vector3d bias_g;                               // gyroscope bias
+    Eigen::Vector3d bias_a;                               // accelerator bias
+    Eigen::Vector3d gravity;                              // the estimated gravity acceleration
+    Eigen::Matrix<double, DIM_STATE, DIM_STATE> cov; // states covariance
 };
 
 template <typename T>
@@ -168,8 +161,8 @@ T deg2rad(T degrees)
 }
 
 template <typename T>
-auto set_pose6d(const double t, const Matrix<T, 3, 1> &a, const Matrix<T, 3, 1> &g,
-                const Matrix<T, 3, 1> &v, const Matrix<T, 3, 1> &p, const Matrix<T, 3, 3> &R)
+auto set_pose6d(const double t, const Eigen::Matrix<T, 3, 1> &a, const Eigen::Matrix<T, 3, 1> &g,
+                const Eigen::Matrix<T, 3, 1> &v, const Eigen::Matrix<T, 3, 1> &p, const Eigen::Matrix<T, 3, 3> &R)
 {
     Pose6D rot_kp;
     rot_kp.offset_time = t;
@@ -193,10 +186,10 @@ where A0_i = [x_i, y_i, z_i], x0 = [A/D, B/D, C/D]^T, b0 = [-1, ..., -1]^T
 normvec:  normalized x0
 */
 template <typename T>
-bool esti_normvector(Matrix<T, 3, 1> &normvec, const PointVector &point, const T &threshold, const int &point_num)
+bool esti_normvector(Eigen::Matrix<T, 3, 1> &normvec, const PointVector &point, const T &threshold, const int &point_num)
 {
-    MatrixXf A(point_num, 3);
-    MatrixXf b(point_num, 1);
+    Eigen::MatrixXf A(point_num, 3);
+    Eigen::MatrixXf b(point_num, 1);
     b.setOnes();
     b *= -1.0f;
 
@@ -227,10 +220,10 @@ float calc_dist(PointType p1, PointType p2)
 }
 
 template <typename T>
-bool esti_plane(Matrix<T, 4, 1> &pca_result, const PointVector &point, const T &threshold)
+bool esti_plane(Eigen::Matrix<T, 4, 1> &pca_result, const PointVector &point, const T &threshold)
 {
-    Matrix<T, NUM_MATCH_POINTS, 3> A;
-    Matrix<T, NUM_MATCH_POINTS, 1> b;
+    Eigen::Matrix<T, NUM_MATCH_POINTS, 3> A;
+    Eigen::Matrix<T, NUM_MATCH_POINTS, 1> b;
     A.setZero();
     b.setOnes();
     b *= -1.0f;
@@ -242,7 +235,7 @@ bool esti_plane(Matrix<T, 4, 1> &pca_result, const PointVector &point, const T &
         A(j, 2) = point[j].z;
     }
 
-    Matrix<T, 3, 1> normvec = A.colPivHouseholderQr().solve(b);
+    Eigen::Matrix<T, 3, 1> normvec = A.colPivHouseholderQr().solve(b);
 
     T n = normvec.norm();
     pca_result(0) = normvec(0) / n;

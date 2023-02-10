@@ -1,37 +1,3 @@
-// This is an advanced implementation of the algorithm described in the
-// following paper:
-//   J. Zhang and S. Singh. LOAM: Lidar Odometry and Mapping in Real-time.
-//     Robotics: Science and Systems Conference (RSS). Berkeley, CA, July 2014.
-
-// Modifier: Livox               dev@livoxtech.com
-
-// Copyright 2013, Ji Zhang, Carnegie Mellon University
-// Further contributions copyright (c) 2016, Southwest Research Institute
-// All rights reserved.
-//
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are met:
-//
-// 1. Redistributions of source code must retain the above copyright notice,
-//    this list of conditions and the following disclaimer.
-// 2. Redistributions in binary form must reproduce the above copyright notice,
-//    this list of conditions and the following disclaimer in the documentation
-//    and/or other materials provided with the distribution.
-// 3. Neither the name of the copyright holder nor the names of its
-//    contributors may be used to endorse or promote products derived from this
-//    software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
-// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
-// ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
-// LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
-// CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
-// SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
-// INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
-// CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
-// ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
-// POSSIBILITY OF SUCH DAMAGE.
 #include <omp.h>
 #include <mutex>
 #include <math.h>
@@ -40,38 +6,42 @@
 #include <csignal>
 #include <unistd.h>
 #include <Python.h>
-#include <so3_math.h>
-#include <ros/ros.h>
+
 #include <Eigen/Core>
-#include "IMU_Processing.hpp"
+
+#include <ros/ros.h>
+
 #include <nav_msgs/Odometry.h>
 #include <nav_msgs/Path.h>
 #include <visualization_msgs/Marker.h>
 #include <pcl_conversions/pcl_conversions.h>
-#include <pcl/point_cloud.h>
-#include <pcl/point_types.h>
-#include <pcl/filters/voxel_grid.h>
-#include <pcl/io/pcd_io.h>
 #include <sensor_msgs/PointCloud2.h>
 #include <tf/transform_datatypes.h>
 #include <tf/transform_broadcaster.h>
 #include <geometry_msgs/Vector3.h>
-#include <livox_ros_driver/CustomMsg.h>
+
+#include <pcl/point_cloud.h>
+#include <pcl/point_types.h>
+#include <pcl/filters/voxel_grid.h>
+#include <pcl/io/pcd_io.h>
+
 #include "preprocess.h"
-#include <ikd-Tree/ikd_Tree.h>
+#include "IMU_Processing.hpp"
+#include "so3_math.h"
+#include "ikd-Tree/ikd_Tree.h"
+#include "livox_ros_driver/CustomMsg.h"
 
 #define INIT_TIME (0.1)
 #define LASER_POINT_COV (0.001)
 #define MAXN (720000)
 #define PUBFRAME_PERIOD (20)
 
-/*** Time Log Variables ***/
+// Time Log Variables
 double kdtree_incremental_time = 0.0, kdtree_search_time = 0.0, kdtree_delete_time = 0.0;
 double T1[MAXN], s_plot[MAXN], s_plot2[MAXN], s_plot3[MAXN], s_plot4[MAXN], s_plot5[MAXN], s_plot6[MAXN], s_plot7[MAXN], s_plot8[MAXN], s_plot9[MAXN], s_plot10[MAXN], s_plot11[MAXN];
 double match_time = 0, solve_time = 0, solve_const_H_time = 0;
 int kdtree_size_st = 0, kdtree_size_end = 0, add_point_size = 0, kdtree_delete_counter = 0;
 bool runtime_pos_log = false, pcd_save_en = false, time_sync_en = false, extrinsic_est_en = true, path_en = true;
-/**************************/
 
 float res_last[100000] = {0.0};
 float DET_RANGE = 300.0f;
@@ -118,14 +88,14 @@ pcl::VoxelGrid<PointType> downSizeFilterMap;
 
 KD_TREE<PointType> ikdtree;
 
-V3F XAxisPoint_body(LIDAR_SP_LEN, 0.0, 0.0);
-V3F XAxisPoint_world(LIDAR_SP_LEN, 0.0, 0.0);
-V3D euler_cur;
-V3D position_last(Zero3d);
-V3D Lidar_T_wrt_IMU(Zero3d);
-M3D Lidar_R_wrt_IMU(Eye3d);
+Eigen::Vector3f XAxisPoint_body(LIDAR_SP_LEN, 0.0, 0.0);
+Eigen::Vector3f XAxisPoint_world(LIDAR_SP_LEN, 0.0, 0.0);
+Eigen::Vector3d euler_cur;
+Eigen::Vector3d position_last(Zero3d);
+Eigen::Vector3d Lidar_T_wrt_IMU(Zero3d);
+Eigen::Matrix3d Lidar_R_wrt_IMU(Eye3d);
 
-/*** EKF inputs and output ***/
+// EKF inputs and output
 MeasureGroup Measures;
 esekfom::esekf<state_ikfom, 12, input_ikfom> kf;
 state_ikfom state_point;
@@ -148,7 +118,7 @@ void SigHandle(int sig)
 
 inline void dump_lio_state_to_log(FILE *fp)
 {
-    V3D rot_ang(Log(state_point.rot.toRotationMatrix()));
+    Eigen::Vector3d rot_ang(Log(state_point.rot.toRotationMatrix()));
     fprintf(fp, "%lf ", Measures.lidar_beg_time - first_lidar_time);
     fprintf(fp, "%lf %lf %lf ", rot_ang(0), rot_ang(1), rot_ang(2));                            // Angle
     fprintf(fp, "%lf %lf %lf ", state_point.pos(0), state_point.pos(1), state_point.pos(2));    // Pos
@@ -157,15 +127,15 @@ inline void dump_lio_state_to_log(FILE *fp)
     fprintf(fp, "%lf %lf %lf ", 0.0, 0.0, 0.0);                                                 // Acc
     fprintf(fp, "%lf %lf %lf ", state_point.bg(0), state_point.bg(1), state_point.bg(2));       // Bias_g
     fprintf(fp, "%lf %lf %lf ", state_point.ba(0), state_point.ba(1), state_point.ba(2));       // Bias_a
-    fprintf(fp, "%lf %lf %lf ", state_point.grav[0], state_point.grav[1], state_point.grav[2]); // Bias_a
+    fprintf(fp, "%lf %lf %lf ", state_point.grav[0], state_point.grav[1], state_point.grav[2]); // Gravity
     fprintf(fp, "\r\n");
     fflush(fp);
 }
 
 void pointBodyToWorld_ikfom(PointType const *const pi, PointType *const po, state_ikfom &s)
 {
-    V3D p_body(pi->x, pi->y, pi->z);
-    V3D p_global(s.rot * (s.offset_R_L_I * p_body + s.offset_T_L_I) + s.pos);
+    Eigen::Vector3d p_body(pi->x, pi->y, pi->z);
+    Eigen::Vector3d p_global(s.rot * (s.offset_R_L_I * p_body + s.offset_T_L_I) + s.pos);
 
     po->x = p_global(0);
     po->y = p_global(1);
@@ -175,8 +145,8 @@ void pointBodyToWorld_ikfom(PointType const *const pi, PointType *const po, stat
 
 void pointBodyToWorld(PointType const *const pi, PointType *const po)
 {
-    V3D p_body(pi->x, pi->y, pi->z);
-    V3D p_global(state_point.rot * (state_point.offset_R_L_I * p_body + state_point.offset_T_L_I) + state_point.pos);
+    Eigen::Vector3d p_body(pi->x, pi->y, pi->z);
+    Eigen::Vector3d p_global(state_point.rot * (state_point.offset_R_L_I * p_body + state_point.offset_T_L_I) + state_point.pos);
 
     po->x = p_global(0);
     po->y = p_global(1);
@@ -185,10 +155,10 @@ void pointBodyToWorld(PointType const *const pi, PointType *const po)
 }
 
 template <typename T>
-void pointBodyToWorld(const Matrix<T, 3, 1> &pi, Matrix<T, 3, 1> &po)
+void pointBodyToWorld(const Eigen::Matrix<T, 3, 1> &pi, Eigen::Matrix<T, 3, 1> &po)
 {
-    V3D p_body(pi[0], pi[1], pi[2]);
-    V3D p_global(state_point.rot * (state_point.offset_R_L_I * p_body + state_point.offset_T_L_I) + state_point.pos);
+    Eigen::Vector3d p_body(pi[0], pi[1], pi[2]);
+    Eigen::Vector3d p_global(state_point.rot * (state_point.offset_R_L_I * p_body + state_point.offset_T_L_I) + state_point.pos);
 
     po[0] = p_global(0);
     po[1] = p_global(1);
@@ -197,8 +167,8 @@ void pointBodyToWorld(const Matrix<T, 3, 1> &pi, Matrix<T, 3, 1> &po)
 
 void RGBpointBodyToWorld(PointType const *const pi, PointType *const po)
 {
-    V3D p_body(pi->x, pi->y, pi->z);
-    V3D p_global(state_point.rot * (state_point.offset_R_L_I * p_body + state_point.offset_T_L_I) + state_point.pos);
+    Eigen::Vector3d p_body(pi->x, pi->y, pi->z);
+    Eigen::Vector3d p_global(state_point.rot * (state_point.offset_R_L_I * p_body + state_point.offset_T_L_I) + state_point.pos);
 
     po->x = p_global(0);
     po->y = p_global(1);
@@ -208,8 +178,8 @@ void RGBpointBodyToWorld(PointType const *const pi, PointType *const po)
 
 void RGBpointBodyLidarToIMU(PointType const *const pi, PointType *const po)
 {
-    V3D p_body_lidar(pi->x, pi->y, pi->z);
-    V3D p_body_imu(state_point.offset_R_L_I * p_body_lidar + state_point.offset_T_L_I);
+    Eigen::Vector3d p_body_lidar(pi->x, pi->y, pi->z);
+    Eigen::Vector3d p_body_imu(state_point.offset_R_L_I * p_body_lidar + state_point.offset_T_L_I);
 
     po->x = p_body_imu(0);
     po->y = p_body_imu(1);
@@ -232,7 +202,7 @@ void lasermap_fov_segment()
     kdtree_delete_counter = 0;
     kdtree_delete_time = 0.0;
     pointBodyToWorld(XAxisPoint_body, XAxisPoint_world);
-    V3D pos_LiD = pos_lid;
+    Eigen::Vector3d pos_LiD = pos_lid;
     if (!Localmap_Initialized)
     {
         for (int i = 0; i < 3; i++)
@@ -381,7 +351,7 @@ bool sync_packages(MeasureGroup &meas)
         return false;
     }
 
-    /*** push a lidar scan ***/
+    // push a lidar scan
     if (!lidar_pushed)
     {
         meas.lidar = lidar_buffer.front();
@@ -412,7 +382,7 @@ bool sync_packages(MeasureGroup &meas)
         return false;
     }
 
-    /*** push imu data, and pop from imu buffer ***/
+    // push imu data, and pop from imu buffer
     double imu_time = imu_buffer.front()->header.stamp.toSec();
     meas.imu.clear();
     while ((!imu_buffer.empty()) && (imu_time < lidar_end_time))
@@ -439,9 +409,9 @@ void map_incremental()
     PointNoNeedDownsample.reserve(feats_down_size);
     for (int i = 0; i < feats_down_size; i++)
     {
-        /* transform to world frame */
+        // transform to world frame
         pointBodyToWorld(&(feats_down_body->points[i]), &(feats_down_world->points[i]));
-        /* decide if need add to map */
+        // decide if need add to map
         if (!Nearest_Points[i].empty() && flg_EKF_inited)
         {
             const PointVector &points_near = Nearest_Points[i];
@@ -509,8 +479,8 @@ void publish_frame_world(const ros::Publisher &pubLaserCloudFull)
     }
 
     /**************** save map ****************/
-    /* 1. make sure you have enough memories
-    /* 2. noted that pcd save will influence the real-time performences **/
+    // 1. make sure you have enough memories
+    // 2. noted that pcd save will influence the real-time performences
     if (pcd_save_en)
     {
         int size = feats_undistort->points.size();
@@ -634,7 +604,7 @@ void publish_path(const ros::Publisher pubPath)
     msg_body_pose.header.stamp = ros::Time().fromSec(lidar_end_time);
     msg_body_pose.header.frame_id = "camera_init";
 
-    /*** if path is too large, the rvis will crash ***/
+    // if path is too large, the rvis will crash
     static int jjj = 0;
     jjj++;
     if (jjj % 10 == 0)
@@ -651,7 +621,7 @@ void h_share_model(state_ikfom &s, esekfom::dyn_share_datastruct<double> &ekfom_
     corr_normvect->clear();
     total_residual = 0.0;
 
-/** closest surface search and residual computation **/
+// closest surface search and residual computation
 #ifdef MP_EN
     omp_set_num_threads(MP_PROC_NUM);
 #pragma omp parallel for
@@ -661,9 +631,9 @@ void h_share_model(state_ikfom &s, esekfom::dyn_share_datastruct<double> &ekfom_
         PointType &point_body = feats_down_body->points[i];
         PointType &point_world = feats_down_world->points[i];
 
-        /* transform to world frame */
-        V3D p_body(point_body.x, point_body.y, point_body.z);
-        V3D p_global(s.rot * (s.offset_R_L_I * p_body + s.offset_T_L_I) + s.pos);
+        // transform to world frame
+        Eigen::Vector3d p_body(point_body.x, point_body.y, point_body.z);
+        Eigen::Vector3d p_global(s.rot * (s.offset_R_L_I * p_body + s.offset_T_L_I) + s.pos);
         point_world.x = p_global(0);
         point_world.y = p_global(1);
         point_world.z = p_global(2);
@@ -675,7 +645,7 @@ void h_share_model(state_ikfom &s, esekfom::dyn_share_datastruct<double> &ekfom_
 
         if (ekfom_data.converge)
         {
-            /** Find the closest surfaces in the map **/
+            // Find the closest surfaces in the map
             ikdtree.Nearest_Search(point_world, NUM_MATCH_POINTS, points_near, pointSearchSqDis);
             point_selected_surf[i] = points_near.size() < NUM_MATCH_POINTS ? false : pointSearchSqDis[NUM_MATCH_POINTS - 1] > 5 ? false
                                                                                                                                 : true;
@@ -684,7 +654,7 @@ void h_share_model(state_ikfom &s, esekfom::dyn_share_datastruct<double> &ekfom_
         if (!point_selected_surf[i])
             continue;
 
-        VF(4)
+        Eigen::Matrix<float, 4, 1>
         pabcd;
         point_selected_surf[i] = false;
         if (esti_plane(pabcd, points_near, 0.1f))
@@ -728,30 +698,30 @@ void h_share_model(state_ikfom &s, esekfom::dyn_share_datastruct<double> &ekfom_
     match_time += omp_get_wtime() - match_start;
     double solve_start_ = omp_get_wtime();
 
-    /*** Computation of Measuremnt Jacobian matrix H and measurents vector ***/
-    ekfom_data.h_x = MatrixXd::Zero(effct_feat_num, 12); // 23
+    // Computation of Measuremnt Jacobian matrix H and measurents vector
+    ekfom_data.h_x = Eigen::MatrixXd::Zero(effct_feat_num, 12); // 23
     ekfom_data.h.resize(effct_feat_num);
 
     for (int i = 0; i < effct_feat_num; i++)
     {
         const PointType &laser_p = laserCloudOri->points[i];
-        V3D point_this_be(laser_p.x, laser_p.y, laser_p.z);
-        M3D point_be_crossmat;
+        Eigen::Vector3d point_this_be(laser_p.x, laser_p.y, laser_p.z);
+        Eigen::Matrix3d point_be_crossmat;
         point_be_crossmat << SKEW_SYM_MATRX(point_this_be);
-        V3D point_this = s.offset_R_L_I * point_this_be + s.offset_T_L_I;
-        M3D point_crossmat;
+        Eigen::Vector3d point_this = s.offset_R_L_I * point_this_be + s.offset_T_L_I;
+        Eigen::Matrix3d point_crossmat;
         point_crossmat << SKEW_SYM_MATRX(point_this);
 
-        /*** get the normal vector of closest surface/corner ***/
+        // get the normal vector of closest surface/corner
         const PointType &norm_p = corr_normvect->points[i];
-        V3D norm_vec(norm_p.x, norm_p.y, norm_p.z);
+        Eigen::Vector3d norm_vec(norm_p.x, norm_p.y, norm_p.z);
 
-        /*** calculate the Measuremnt Jacobian matrix H ***/
-        V3D C(s.rot.conjugate() * norm_vec);
-        V3D A(point_crossmat * C);
+        // calculate the Measuremnt Jacobian matrix H
+        Eigen::Vector3d C(s.rot.conjugate() * norm_vec);
+        Eigen::Vector3d A(point_crossmat * C);
         if (extrinsic_est_en)
         {
-            V3D B(point_be_crossmat * s.offset_R_L_I.conjugate() * C); // s.rot.conjugate()*norm_vec);
+            Eigen::Vector3d B(point_be_crossmat * s.offset_R_L_I.conjugate() * C); // s.rot.conjugate()*norm_vec);
             ekfom_data.h_x.block<1, 12>(i, 0) << norm_p.x, norm_p.y, norm_p.z, VEC_FROM_ARRAY(A), VEC_FROM_ARRAY(B), VEC_FROM_ARRAY(C);
         }
         else
@@ -759,7 +729,7 @@ void h_share_model(state_ikfom &s, esekfom::dyn_share_datastruct<double> &ekfom_
             ekfom_data.h_x.block<1, 12>(i, 0) << norm_p.x, norm_p.y, norm_p.z, VEC_FROM_ARRAY(A), 0.0, 0.0, 0.0, 0.0, 0.0, 0.0;
         }
 
-        /*** Measuremnt: distance to the closest surface/corner ***/
+        // Measuremnt: distance to the closest surface/corner
         ekfom_data.h(i) = -norm_p.intensity;
     }
     solve_time += omp_get_wtime() - solve_start_;
@@ -808,7 +778,7 @@ int main(int argc, char **argv)
     path.header.stamp = ros::Time::now();
     path.header.frame_id = "camera_init";
 
-    /*** variables definition ***/
+    // variables definition
     int effect_feat_num = 0, frame_num = 0;
     double deltaT, deltaR, aver_time_consu = 0, aver_time_icp = 0, aver_time_match = 0, aver_time_incre = 0, aver_time_solve = 0, aver_time_const_H_time = 0;
     bool flg_EKF_converged, EKF_stop_flg = 0;
@@ -828,16 +798,16 @@ int main(int argc, char **argv)
     Lidar_T_wrt_IMU << VEC_FROM_ARRAY(extrinT);
     Lidar_R_wrt_IMU << MAT_FROM_ARRAY(extrinR);
     p_imu->set_extrinsic(Lidar_T_wrt_IMU, Lidar_R_wrt_IMU);
-    p_imu->set_gyr_cov(V3D(gyr_cov, gyr_cov, gyr_cov));
-    p_imu->set_acc_cov(V3D(acc_cov, acc_cov, acc_cov));
-    p_imu->set_gyr_bias_cov(V3D(b_gyr_cov, b_gyr_cov, b_gyr_cov));
-    p_imu->set_acc_bias_cov(V3D(b_acc_cov, b_acc_cov, b_acc_cov));
+    p_imu->set_gyr_cov(Eigen::Vector3d(gyr_cov, gyr_cov, gyr_cov));
+    p_imu->set_acc_cov(Eigen::Vector3d(acc_cov, acc_cov, acc_cov));
+    p_imu->set_gyr_bias_cov(Eigen::Vector3d(b_gyr_cov, b_gyr_cov, b_gyr_cov));
+    p_imu->set_acc_bias_cov(Eigen::Vector3d(b_acc_cov, b_acc_cov, b_acc_cov));
 
     double epsi[23] = {0.001};
     fill(epsi, epsi + 23, 0.001);
     kf.init_dyn_share(get_f, df_dx, df_dw, h_share_model, NUM_MAX_ITERATIONS, epsi);
 
-    /*** debug record ***/
+    // debug record
     FILE *fp;
     string pos_log_dir = root_dir + "/Log/pos_log.txt";
     fp = fopen(pos_log_dir.c_str(), "w");
@@ -851,7 +821,7 @@ int main(int argc, char **argv)
     else
         cout << "~~~~" << ROOT_DIR << " doesn't exist" << endl;
 
-    /*** ROS subscribe initialization ***/
+    // ROS subscribe initialization
     ros::Subscriber sub_pcl = p_pre->lidar_type == AVIA ? nh.subscribe(lid_topic, 200000, livox_pcl_cbk) : nh.subscribe(lid_topic, 200000, standard_pcl_cbk);
     ros::Subscriber sub_imu = nh.subscribe(imu_topic, 200000, imu_cbk);
     ros::Publisher pubLaserCloudFull = nh.advertise<sensor_msgs::PointCloud2>("/cloud_registered", 100000);
@@ -860,7 +830,7 @@ int main(int argc, char **argv)
     ros::Publisher pubLaserCloudMap = nh.advertise<sensor_msgs::PointCloud2>("/Laser_map", 100000);
     ros::Publisher pubOdomAftMapped = nh.advertise<nav_msgs::Odometry>("/Odometry", 100000);
     ros::Publisher pubPath = nh.advertise<nav_msgs::Path>("/path", 100000);
-    //------------------------------------------------------------------------------------------------------
+
     signal(SIGINT, SigHandle);
     ros::Rate rate(5000);
     bool status = ros::ok();
@@ -899,15 +869,15 @@ int main(int argc, char **argv)
             }
 
             flg_EKF_inited = (Measures.lidar_beg_time - first_lidar_time) < INIT_TIME ? false : true;
-            /*** Segment the map in lidar FOV ***/
+            // Segment the map in lidar FOV
             lasermap_fov_segment();
 
-            /*** downsample the feature points in a scan ***/
+            // downsample the feature points in a scan
             downSizeFilterSurf.setInputCloud(feats_undistort);
             downSizeFilterSurf.filter(*feats_down_body);
             t1 = omp_get_wtime();
             feats_down_size = feats_down_body->points.size();
-            /*** initialize the map kdtree ***/
+            // initialize the map kdtree
             if (ikdtree.Root_Node == nullptr)
             {
                 if (feats_down_size > 5)
@@ -927,7 +897,7 @@ int main(int argc, char **argv)
 
             // cout<<"[ mapping ]: In num: "<<feats_undistort->points.size()<<" downsamp "<<feats_down_size<<" Map num: "<<featsFromMapNum<<"effect num:"<<effct_feat_num<<endl;
 
-            /*** ICP and iterated Kalman filter update ***/
+            // ICP and iterated Kalman filter update
             if (feats_down_size < 5)
             {
                 ROS_WARN("No point, skip this scan!\n");
@@ -937,7 +907,7 @@ int main(int argc, char **argv)
             normvec->resize(feats_down_size);
             feats_down_world->resize(feats_down_size);
 
-            V3D ext_euler = SO3ToEuler(state_point.offset_R_L_I);
+            Eigen::Vector3d ext_euler = SO3ToEuler(state_point.offset_R_L_I);
             fout_pre << setw(20) << Measures.lidar_beg_time - first_lidar_time << " " << euler_cur.transpose() << " " << state_point.pos.transpose() << " " << ext_euler.transpose() << " " << state_point.offset_T_L_I.transpose() << " " << state_point.vel.transpose()
                      << " " << state_point.bg.transpose() << " " << state_point.ba.transpose() << " " << state_point.grav << endl;
 
@@ -952,11 +922,11 @@ int main(int argc, char **argv)
             pointSearchInd_surf.resize(feats_down_size);
             Nearest_Points.resize(feats_down_size);
             int rematch_num = 0;
-            bool nearest_search_en = true; //
+            bool nearest_search_en = true;
 
             t2 = omp_get_wtime();
 
-            /*** iterated state estimation ***/
+            // iterated state estimation
             double t_update_start = omp_get_wtime();
             double solve_H_time = 0;
             kf.update_iterated_dyn_share_modified(LASER_POINT_COV, solve_H_time);
@@ -970,15 +940,15 @@ int main(int argc, char **argv)
 
             double t_update_end = omp_get_wtime();
 
-            /******* Publish odometry *******/
+            // Publish odometry
             publish_odometry(pubOdomAftMapped);
 
-            /*** add the feature points to map kdtree ***/
+            // add the feature points to map kdtree
             t3 = omp_get_wtime();
             map_incremental();
             t5 = omp_get_wtime();
 
-            /******* Publish points *******/
+            // Publish points
             if (path_en)
                 publish_path(pubPath);
             if (scan_pub_en || pcd_save_en)
@@ -988,7 +958,7 @@ int main(int argc, char **argv)
             // publish_effect_world(pubLaserCloudEffect);
             // publish_map(pubLaserCloudMap);
 
-            /*** Debug variables ***/
+            // Debug variables
             if (runtime_pos_log)
             {
                 frame_num++;
@@ -1024,8 +994,8 @@ int main(int argc, char **argv)
     }
 
     /**************** save map ****************/
-    /* 1. make sure you have enough memories
-    /* 2. pcd save will largely influence the real-time performences **/
+    // 1. make sure you have enough memories
+    // 2. pcd save will largely influence the real-time performences
     if (pcl_wait_save->size() > 0 && pcd_save_en)
     {
         string file_name = string("scans.pcd");
