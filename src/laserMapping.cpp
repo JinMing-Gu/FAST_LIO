@@ -39,7 +39,7 @@
 ros::Publisher pub_corn;
 ros::Publisher pub_surf;
 
-/*** Time Log Variables ***/
+// Time Log Variables
 double kdtree_incremental_time = 0.0, kdtree_search_time = 0.0, kdtree_delete_time = 0.0;
 double T1[MAXN], s_plot[MAXN], s_plot2[MAXN], s_plot3[MAXN], s_plot4[MAXN], s_plot5[MAXN], s_plot6[MAXN], s_plot7[MAXN], s_plot8[MAXN], s_plot9[MAXN], s_plot10[MAXN], s_plot11[MAXN];
 double match_time = 0, solve_time = 0, solve_const_H_time = 0;
@@ -637,13 +637,13 @@ void publish_path(const ros::Publisher pubPath)
     msg_body_pose.header.frame_id = "camera_init";
 
     // if path is too large, the rvis will crash
-    static int jjj = 0;
-    jjj++;
-    if (jjj % 10 == 0)
-    {
+    // static int jjj = 0;
+    // jjj++;
+    // if (jjj % 10 == 0)
+    // {
         path.poses.push_back(msg_body_pose);
         pubPath.publish(path);
-    }
+    // }
 }
 
 void h_share_model(state_ikfom &s, esekfom::dyn_share_datastruct<double> &ekfom_data)
@@ -864,7 +864,7 @@ int main(int argc, char **argv)
     ros::Publisher pubPath = nh.advertise<nav_msgs::Path>("/path", 100000);
     pub_corn = nh.advertise<sensor_msgs::PointCloud2>("/pl_corn", 100000);;
     pub_surf = nh.advertise<sensor_msgs::PointCloud2>("/pl_surf", 100000);;
-    //------------------------------------------------------------------------------------------------------
+
     signal(SIGINT, SigHandle);
     ros::Rate rate(5000);
     bool status = ros::ok();
@@ -1015,7 +1015,7 @@ int main(int argc, char **argv)
                 s_plot9[time_log_counter] = aver_time_consu;
                 s_plot10[time_log_counter] = add_point_size;
                 time_log_counter++;
-                printf("[ mapping ]: time: IMU + Map + Input Downsample: %0.6f ave match: %0.6f ave solve: %0.6f  ave ICP: %0.6f  map incre: %0.6f ave total: %0.6f icp: %0.6f construct H: %0.6f \n", t1 - t0, aver_time_match, aver_time_solve, t3 - t1, t5 - t3, aver_time_consu, aver_time_icp, aver_time_const_H_time);
+                // printf("[ mapping ]: time: IMU + Map + Input Downsample: %0.6f ave match: %0.6f ave solve: %0.6f  ave ICP: %0.6f  map incre: %0.6f ave total: %0.6f icp: %0.6f construct H: %0.6f \n", t1 - t0, aver_time_match, aver_time_solve, t3 - t1, t5 - t3, aver_time_consu, aver_time_icp, aver_time_const_H_time);
                 ext_euler = SO3ToEuler(state_point.offset_R_L_I);
                 fout_out << setw(20) << Measures.lidar_beg_time - first_lidar_time << " " << euler_cur.transpose() << " " << state_point.pos.transpose() << " " << ext_euler.transpose() << " " << state_point.offset_T_L_I.transpose() << " " << state_point.vel.transpose()
                          << " " << state_point.bg.transpose() << " " << state_point.ba.transpose() << " " << state_point.grav << " " << feats_undistort->points.size() << endl;

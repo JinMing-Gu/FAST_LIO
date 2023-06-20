@@ -299,13 +299,12 @@ void Preprocess::velodyne_handler(const sensor_msgs::PointCloud2::ConstPtr &msg)
         return;
     pl_surf.reserve(plsize);
 
-    /*** These variables only works when no point timestamps given ***/
+    // These variables only works when no point timestamps given
     double omega_l = 0.361 * SCAN_RATE; // scan angular velocity
     std::vector<bool> is_first(N_SCANS, true);
     std::vector<double> yaw_fp(N_SCANS, 0.0);   // yaw of first scan point
     std::vector<float> yaw_last(N_SCANS, 0.0);  // yaw of last scan point
     std::vector<float> time_last(N_SCANS, 0.0); // last offset time
-    /*****************************************************************/
 
     if (pl_orig.points[plsize - 1].time > 0)
     {
